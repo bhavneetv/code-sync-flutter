@@ -23,7 +23,7 @@ class CodeSyncApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'CodeSync',
+      title: 'Code Sync',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF10B981)),
@@ -48,7 +48,6 @@ class _WebContainerState extends State<WebContainer> {
   );
   static const String fallbackAuthPath = '/create-room';
   static const String deepLinkScheme = 'codesync';
-  static const String deepLinkHost = 'auth-callback';
 
   InAppWebViewController? _controller;
   bool _isLoading = true;
@@ -125,8 +124,7 @@ class _WebContainerState extends State<WebContainer> {
   }
 
   Future<void> _handleIncomingAuthLink(Uri uri) async {
-    if (uri.scheme.toLowerCase() != deepLinkScheme ||
-        uri.host.toLowerCase() != deepLinkHost) {
+    if (uri.scheme.toLowerCase() != deepLinkScheme) {
       return;
     }
 

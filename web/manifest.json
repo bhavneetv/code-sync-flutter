@@ -1,11 +1,11 @@
 {
-    "name": "codesync",
-    "short_name": "codesync",
+    "name": "Code Sync",
+    "short_name": "Code Sync",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Code Sync",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
