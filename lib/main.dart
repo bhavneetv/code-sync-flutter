@@ -40,7 +40,7 @@ class WebContainer extends StatefulWidget {
 class _WebContainerState extends State<WebContainer> {
   static const String appUrl = String.fromEnvironment(
     'APP_URL',
-    defaultValue: 'https://visionary-caramel-a72745.netlify.app/',
+    defaultValue: 'https://codesyncioo.netlify.app/',
   );
 
   InAppWebViewController? _controller;
@@ -59,9 +59,17 @@ class _WebContainerState extends State<WebContainer> {
     disableVerticalScroll: false,
   );
 
+  String _buildCreateRoomUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      return 'https://codesyncioo.netlify.app/create-room';
+    }
+    final cleaned = trimmed.endsWith('/') ? trimmed.substring(0, trimmed.length - 1) : trimmed;
+    return cleaned.endsWith('/create-room') ? cleaned : '$cleaned/create-room';
+  }
+
   Future<void> _loadUrl(String url) async {
-    final cleaned = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
-    final target = cleaned.endsWith('create-room') ? cleaned : '$cleaned/create-room';
+    final target = _buildCreateRoomUrl(url);
     await _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(target)));
   }
 
@@ -94,7 +102,7 @@ class _WebContainerState extends State<WebContainer> {
           children: [
             InAppWebView(
               initialUrlRequest: URLRequest(
-                url: WebUri((appUrl.endsWith('/') ? appUrl.substring(0, appUrl.length - 1) : appUrl) + 'create-room'),
+                url: WebUri(_buildCreateRoomUrl(appUrl)),
               ),
               initialSettings: _settings,
               onWebViewCreated: (controller) {
