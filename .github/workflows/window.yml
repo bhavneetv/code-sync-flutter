@@ -2,8 +2,7 @@ name: Build Windows EXE & Release
 
 on:
   push:
-    tags:
-      - "v1.1"   # example: v1.0.0
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -16,6 +15,20 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # REQUIRED for tags
+
+      - name: Set release version
+        id: version
+        run: |
+          echo "VERSION=v1.1" >> $env:GITHUB_ENV
+
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag $env:VERSION
+          git push origin $env:VERSION
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -32,14 +45,16 @@ jobs:
       - name: Build Windows EXE
         run: flutter build windows --release
 
-      - name: Zip EXE (recommended)
+      - name: Zip EXE
         run: |
           mkdir release
           powershell Compress-Archive `
             build/windows/x64/runner/Release/* `
             release/windows-exe.zip
 
-      - name: Upload EXE to Release
+      - name: Create GitHub Release & Upload EXE
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
           files: release/windows-exe.zip
