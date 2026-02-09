@@ -81,6 +81,17 @@ class _WebContainerState extends State<WebContainer> {
     return cleaned.endsWith('/create-room') ? cleaned : '$cleaned/create-room';
   }
 
+  String _buildBaseUrl(String url) {
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) {
+      return 'https://codesyncioo.netlify.app/';
+    }
+    final cleaned = trimmed.endsWith('/')
+        ? trimmed.substring(0, trimmed.length - 1)
+        : trimmed;
+    return '$cleaned/';
+  }
+
   String _buildWebUrlForPath(String path) {
     final trimmed = appUrl.trim();
     final cleaned = trimmed.endsWith('/')
@@ -156,6 +167,11 @@ class _WebContainerState extends State<WebContainer> {
     await _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(target)));
   }
 
+  Future<void> _loadBaseUrl(String url) async {
+    final target = _buildBaseUrl(url);
+    await _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(target)));
+  }
+
   Future<bool> _ensureStoragePermission() async {
     if (!Platform.isAndroid) return true;
     final storage = await Permission.storage.request();
@@ -196,9 +212,7 @@ class _WebContainerState extends State<WebContainer> {
         child: Stack(
           children: [
             InAppWebView(
-              initialUrlRequest: URLRequest(
-                url: WebUri(_buildCreateRoomUrl(appUrl)),
-              ),
+              initialUrlRequest: URLRequest(url: WebUri(_buildBaseUrl(appUrl))),
               initialSettings: _settings,
               onWebViewCreated: (controller) {
                 _controller = controller;
@@ -405,11 +419,18 @@ class _WebContainerState extends State<WebContainer> {
                 setState(() {
                   _isLoading = false;
                 });
+                // On iOS, a bad initial deep route can render blank. Reload base app URL.
+                if (url == null || url.toString().isEmpty) {
+                  _loadBaseUrl(appUrl);
+                }
               },
               onLoadHttpError: (controller, url, statusCode, description) {
                 setState(() {
                   _isLoading = false;
                 });
+                if (statusCode >= 400 && (url == null || url.path.isEmpty)) {
+                  _loadBaseUrl(appUrl);
+                }
               },
             ),
             if (_isLoading)
