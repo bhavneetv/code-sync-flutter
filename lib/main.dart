@@ -1,4 +1,6 @@
-﻿import 'dart:io';
+import 'dart:io';
+
+import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +9,8 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:app_links/app_links.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,9 +46,16 @@ class _WebContainerState extends State<WebContainer> {
     'APP_URL',
     defaultValue: 'https://codesyncioo.netlify.app/',
   );
+  static const String fallbackAuthPath = '/create-room';
+  static const String deepLinkScheme = 'codesync';
+  static const String deepLinkHost = 'auth-callback';
 
   InAppWebViewController? _controller;
   bool _isLoading = true;
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _deepLinkSub;
+  Uri? _queuedAuthUri;
+  String _pendingOAuthReturnPath = fallbackAuthPath;
 
   final InAppWebViewSettings _settings = InAppWebViewSettings(
     javaScriptEnabled: true,
@@ -64,8 +75,80 @@ class _WebContainerState extends State<WebContainer> {
     if (trimmed.isEmpty) {
       return 'https://codesyncioo.netlify.app/create-room';
     }
-    final cleaned = trimmed.endsWith('/') ? trimmed.substring(0, trimmed.length - 1) : trimmed;
+    final cleaned = trimmed.endsWith('/')
+        ? trimmed.substring(0, trimmed.length - 1)
+        : trimmed;
     return cleaned.endsWith('/create-room') ? cleaned : '$cleaned/create-room';
+  }
+
+  String _buildWebUrlForPath(String path) {
+    final trimmed = appUrl.trim();
+    final cleaned = trimmed.endsWith('/')
+        ? trimmed.substring(0, trimmed.length - 1)
+        : trimmed;
+    final origin = cleaned.isEmpty
+        ? 'https://codesyncioo.netlify.app'
+        : cleaned;
+    final safePath = path.startsWith('/') ? path : fallbackAuthPath;
+    return '$origin$safePath';
+  }
+
+  Future<void> _initDeepLinks() async {
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) {
+        await _handleIncomingAuthLink(initialUri);
+      }
+    } catch (err) {
+      debugPrint('[CodeSync] Failed to read initial deep link: $err');
+    }
+
+    _deepLinkSub = _appLinks.uriLinkStream.listen(
+      (uri) async {
+        await _handleIncomingAuthLink(uri);
+      },
+      onError: (err) {
+        debugPrint('[CodeSync] Deep link stream error: $err');
+      },
+    );
+  }
+
+  Future<void> _handleIncomingAuthLink(Uri uri) async {
+    if (uri.scheme.toLowerCase() != deepLinkScheme ||
+        uri.host.toLowerCase() != deepLinkHost) {
+      return;
+    }
+
+    final rawReturnPath =
+        uri.queryParameters['oauth_return'] ?? _pendingOAuthReturnPath;
+    final returnPath = rawReturnPath.startsWith('/')
+        ? rawReturnPath
+        : fallbackAuthPath;
+
+    final forwardQuery = <String, String>{};
+    uri.queryParameters.forEach((key, value) {
+      if (key != 'oauth_return') {
+        forwardQuery[key] = value;
+      }
+    });
+
+    final targetBase = _buildWebUrlForPath(returnPath);
+    final targetUri = Uri.parse(targetBase).replace(
+      queryParameters: forwardQuery.isEmpty ? null : forwardQuery,
+      fragment: uri.fragment.isEmpty ? null : uri.fragment,
+    );
+
+    if (_controller == null) {
+      _queuedAuthUri = uri;
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+    await _controller?.loadUrl(
+      urlRequest: URLRequest(url: WebUri(targetUri.toString())),
+    );
   }
 
   Future<void> _loadUrl(String url) async {
@@ -94,6 +177,18 @@ class _WebContainerState extends State<WebContainer> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  @override
+  void dispose() {
+    _deepLinkSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -107,6 +202,58 @@ class _WebContainerState extends State<WebContainer> {
               initialSettings: _settings,
               onWebViewCreated: (controller) {
                 _controller = controller;
+                if (_queuedAuthUri != null) {
+                  final queued = _queuedAuthUri!;
+                  _queuedAuthUri = null;
+                  _handleIncomingAuthLink(queued);
+                }
+
+                controller.addJavaScriptHandler(
+                  handlerName: 'openExternalAuth',
+                  callback: (args) async {
+                    try {
+                      if (args.isEmpty || args.first is! Map) {
+                        return {'success': false, 'error': 'Invalid payload'};
+                      }
+                      final payload = Map<String, dynamic>.from(
+                        args.first as Map,
+                      );
+                      final authUrl = (payload['url'] ?? '').toString();
+                      final returnPath =
+                          (payload['returnPath'] ?? fallbackAuthPath)
+                              .toString();
+
+                      if (authUrl.isEmpty) {
+                        return {'success': false, 'error': 'Missing auth URL'};
+                      }
+
+                      _pendingOAuthReturnPath = returnPath.startsWith('/')
+                          ? returnPath
+                          : fallbackAuthPath;
+
+                      final uri = Uri.tryParse(authUrl);
+                      if (uri == null) {
+                        return {'success': false, 'error': 'Invalid auth URL'};
+                      }
+
+                      final opened = await launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                      );
+                      if (!opened) {
+                        return {
+                          'success': false,
+                          'error': 'Could not open browser',
+                        };
+                      }
+
+                      return {'success': true};
+                    } catch (err) {
+                      return {'success': false, 'error': err.toString()};
+                    }
+                  },
+                );
+
                 controller.addJavaScriptHandler(
                   handlerName: 'pickDownloadPath',
                   callback: (args) async {
@@ -116,16 +263,22 @@ class _WebContainerState extends State<WebContainer> {
                         return {
                           'success': true,
                           'path': path,
-                          'warning': 'iOS uses the app documents folder.'
+                          'warning': 'iOS uses the app documents folder.',
                         };
                       }
                       final permissionOk = await _ensureStoragePermission();
                       if (!permissionOk) {
-                        return {'success': false, 'error': 'Storage permission denied'};
+                        return {
+                          'success': false,
+                          'error': 'Storage permission denied',
+                        };
                       }
                       final path = await FilePicker.platform.getDirectoryPath();
                       if (path == null || path.isEmpty) {
-                        return {'success': false, 'error': 'No folder selected'};
+                        return {
+                          'success': false,
+                          'error': 'No folder selected',
+                        };
                       }
                       return {'success': true, 'path': path};
                     } catch (err) {
@@ -140,7 +293,9 @@ class _WebContainerState extends State<WebContainer> {
                     if (args.isEmpty || args.first is! Map) {
                       return {'success': false, 'error': 'Invalid payload'};
                     }
-                    final payload = Map<String, dynamic>.from(args.first as Map);
+                    final payload = Map<String, dynamic>.from(
+                      args.first as Map,
+                    );
                     final basePath = (payload['basePath'] ?? '').toString();
                     final upserts = (payload['upserts'] as List?) ?? [];
                     final deletes = (payload['deletes'] as List?) ?? [];
@@ -149,7 +304,10 @@ class _WebContainerState extends State<WebContainer> {
                       if (Platform.isAndroid) {
                         final permissionOk = await _ensureStoragePermission();
                         if (!permissionOk) {
-                          return {'success': false, 'error': 'Storage permission denied'};
+                          return {
+                            'success': false,
+                            'error': 'Storage permission denied',
+                          };
                         }
                       }
 
@@ -165,8 +323,13 @@ class _WebContainerState extends State<WebContainer> {
 
                       String rootPath = directory.path;
                       if (Platform.isIOS) {
-                        final roomFolder = payload['roomName']?.toString().trim() ?? 'codesync';
-                        rootPath = p.join(rootPath, roomFolder.isEmpty ? 'codesync' : roomFolder);
+                        final roomFolder =
+                            payload['roomName']?.toString().trim() ??
+                            'codesync';
+                        rootPath = p.join(
+                          rootPath,
+                          roomFolder.isEmpty ? 'codesync' : roomFolder,
+                        );
                         final roomDir = Directory(rootPath);
                         if (!await roomDir.exists()) {
                           await roomDir.create(recursive: true);
@@ -174,12 +337,16 @@ class _WebContainerState extends State<WebContainer> {
                       }
 
                       debugPrint('[CodeSync] Saving to: $rootPath');
-                      debugPrint('[CodeSync] Upserts: ${upserts.length}, Deletes: ${deletes.length}');
+                      debugPrint(
+                        '[CodeSync] Upserts: ${upserts.length}, Deletes: ${deletes.length}',
+                      );
 
                       for (final item in deletes) {
                         final relPath = item.toString();
                         if (relPath.isEmpty) continue;
-                        final file = File(p.normalize(p.join(rootPath, relPath)));
+                        final file = File(
+                          p.normalize(p.join(rootPath, relPath)),
+                        );
                         if (await file.exists()) {
                           await file.delete();
                         }
@@ -191,7 +358,9 @@ class _WebContainerState extends State<WebContainer> {
                         final contentValue = (item['content'] ?? '').toString();
                         if (pathValue.isEmpty) continue;
 
-                        final filePath = p.normalize(p.join(rootPath, pathValue));
+                        final filePath = p.normalize(
+                          p.join(rootPath, pathValue),
+                        );
                         final fileDir = Directory(p.dirname(filePath));
                         if (!await fileDir.exists()) {
                           await fileDir.create(recursive: true);
@@ -206,7 +375,7 @@ class _WebContainerState extends State<WebContainer> {
                         'debug': {
                           'upserts': upserts.length,
                           'deletes': deletes.length,
-                        }
+                        },
                       };
                     } catch (err) {
                       return {'success': false, 'error': err.toString()};
@@ -225,7 +394,9 @@ class _WebContainerState extends State<WebContainer> {
                 });
                 if (url != null) {
                   final path = url.path.toLowerCase();
-                  if (path == '/' || path.endsWith('/index') || path.endsWith('/index.html')) {
+                  if (path == '/' ||
+                      path.endsWith('/index') ||
+                      path.endsWith('/index.html')) {
                     await _loadUrl(appUrl);
                   }
                 }
