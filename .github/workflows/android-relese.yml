@@ -2,20 +2,31 @@ name: Build Android APK & Release
 
 on:
   push:
-    tags:
-      - "v1.1"   # example: v1.0.0
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
-  contents: write   # REQUIRED for releases
+  contents: write
 
 jobs:
-  build-apk:
+  build-android:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # REQUIRED for tags
+
+      - name: Set release version
+        run: echo "VERSION=v1.1" >> $GITHUB_ENV
+
+      - name: Create Git tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag $VERSION
+          git push origin $VERSION
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -29,7 +40,9 @@ jobs:
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Upload APK to Release
+      - name: Create GitHub Release & Upload APK
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
           files: build/app/outputs/flutter-apk/app-release.apk
