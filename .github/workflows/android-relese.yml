@@ -1,0 +1,35 @@
+name: Build Android APK & Release
+
+on:
+  push:
+    tags:
+      - "v1.1"   # example: v1.0.0
+  workflow_dispatch:
+
+permissions:
+  contents: write   # REQUIRED for releases
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk

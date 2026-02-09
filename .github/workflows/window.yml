@@ -1,16 +1,20 @@
-name: Build Flutter Windows EXE
+name: Build Windows EXE & Release
 
 on:
   push:
-    branches: [ main ]
+    tags:
+      - "v1.1"   # example: v1.0.0
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build-windows:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Flutter
@@ -19,20 +23,23 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Flutter doctor
-        run: flutter doctor -v
-
-      - name: Install dependencies
+      - name: Flutter pub get
         run: flutter pub get
 
-      - name: Enable Windows Desktop
+      - name: Enable Windows
         run: flutter config --enable-windows-desktop
 
-      - name: Build Windows
+      - name: Build Windows EXE
         run: flutter build windows --release
 
-      - name: Upload EXE
-        uses: actions/upload-artifact@v4
+      - name: Zip EXE (recommended)
+        run: |
+          mkdir release
+          powershell Compress-Archive `
+            build/windows/x64/runner/Release/* `
+            release/windows-exe.zip
+
+      - name: Upload EXE to Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: windows-build
-          path: build/windows/x64/runner/Release/
+          files: release/windows-exe.zip
