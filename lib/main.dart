@@ -2,6 +2,7 @@
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -58,6 +59,12 @@ class _WebContainerState extends State<WebContainer> {
     disableVerticalScroll: false,
   );
 
+  Future<void> _loadUrl(String url) async {
+    final cleaned = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+    final target = cleaned.endsWith('create-room') ? cleaned : '$cleaned/create-room';
+    await _controller?.loadUrl(urlRequest: URLRequest(url: WebUri(target)));
+  }
+
   Future<bool> _ensureStoragePermission() async {
     if (!Platform.isAndroid) return true;
     final storage = await Permission.storage.request();
@@ -70,6 +77,14 @@ class _WebContainerState extends State<WebContainer> {
     return (await getApplicationDocumentsDirectory()).path;
   }
 
+  Future<void> _exitApp() async {
+    if (Platform.isAndroid) {
+      await SystemNavigator.pop();
+    } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      exit(0);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -78,7 +93,9 @@ class _WebContainerState extends State<WebContainer> {
         child: Stack(
           children: [
             InAppWebView(
-              initialUrlRequest: URLRequest(url: WebUri(appUrl)),
+              initialUrlRequest: URLRequest(
+                url: WebUri((appUrl.endsWith('/') ? appUrl.substring(0, appUrl.length - 1) : appUrl) + 'create-room'),
+              ),
               initialSettings: _settings,
               onWebViewCreated: (controller) {
                 _controller = controller;
@@ -94,12 +111,10 @@ class _WebContainerState extends State<WebContainer> {
                           'warning': 'iOS uses the app documents folder.'
                         };
                       }
-
                       final permissionOk = await _ensureStoragePermission();
                       if (!permissionOk) {
                         return {'success': false, 'error': 'Storage permission denied'};
                       }
-
                       final path = await FilePicker.platform.getDirectoryPath();
                       if (path == null || path.isEmpty) {
                         return {'success': false, 'error': 'No folder selected'};
@@ -141,6 +156,14 @@ class _WebContainerState extends State<WebContainer> {
                       }
 
                       String rootPath = directory.path;
+                      if (Platform.isIOS) {
+                        final roomFolder = payload['roomName']?.toString().trim() ?? 'codesync';
+                        rootPath = p.join(rootPath, roomFolder.isEmpty ? 'codesync' : roomFolder);
+                        final roomDir = Directory(rootPath);
+                        if (!await roomDir.exists()) {
+                          await roomDir.create(recursive: true);
+                        }
+                      }
 
                       debugPrint('[CodeSync] Saving to: $rootPath');
                       debugPrint('[CodeSync] Upserts: ${upserts.length}, Deletes: ${deletes.length}');
@@ -192,6 +215,12 @@ class _WebContainerState extends State<WebContainer> {
                 setState(() {
                   _isLoading = false;
                 });
+                if (url != null) {
+                  final path = url.path.toLowerCase();
+                  if (path == '/' || path.endsWith('/index') || path.endsWith('/index.html')) {
+                    await _loadUrl(appUrl);
+                  }
+                }
               },
               onLoadError: (controller, url, code, message) {
                 setState(() {
