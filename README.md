@@ -1,16 +1,29 @@
-# codesync
+# Code Sync – Flutter App
 
-A new Flutter project.
+This repository contains the **Flutter wrapper application** for Code Sync.  
+It provides a native app experience for mobile and desktop platforms while loading the main Code Sync web editor.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## Main Project Repository
 
-A few resources to get you started if this is your first Flutter project:
+The core Code Sync project (web app, backend logic, and runtime integration) is hosted here:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+👉 https://github.com/bhavneetv/codesync
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---
+
+## How to Run the Flutter App Locally
+
+### Prerequisites
+- Flutter SDK (stable channel)
+- Android Studio / Xcode / Windows desktop setup (as needed)
+- A working internet connection
+
+Verify Flutter installation:
+```bash
+flutter doctor
+flutter run --dart-define=APP_URL=https://codesyncioo.netlify.app/
+flutter build apk --release --dart-define=APP_URL=https://codesyncioo.netlify.app/
+```
+
